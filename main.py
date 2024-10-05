@@ -57,3 +57,4 @@ if __name__ == "__main__":
 
     lrc_file = os.path.join("lrc", "1. Shepherd of Fire.lrc")
     display_lyrics(lrc_file)
+
