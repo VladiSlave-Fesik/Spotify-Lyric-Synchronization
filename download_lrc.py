@@ -9,44 +9,17 @@ from tqdm import tqdm
 # Initialize colorama for colored output on all platforms
 init(autoreset=True)
 
-
-# Function to get track info from a Spotify URL
-def get_track_info(spotify_url):
+# Function to download .lrc from lrclib.net API URL
+def download_from_api_url(api_url, save_dir="lrc"):
     try:
-        # Setup Spotify API with client_id, client_secret, and redirect_uri
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-            client_id="db5724867b86424da3ce45cf740632c3",
-            client_secret="c1716c31e5674c208a1c6454e84de2ca",
-            redirect_uri="http://localhost:8888/callback",
-            scope="user-read-playback-state"
-        ))
-
-        # Extract track ID from the Spotify URL
-        track_id = spotify_url.split('/')[-1].split('?')[0]
-        # Fetch track info
-        track = sp.track(track_id)
-
-        track_name = track['name']
-        artists = ', '.join([artist['name'] for artist in track['artists']])
-
-        return track_name, artists
-
-    except Exception as e:
-        tqdm.write(Fore.RED + f"[!] Error fetching track info: {str(e)}")
-        return None, None
-
-
-# Function to search and download .lrc file via the lrclib.net API
-def download_lrc(track_name, artist_name, save_dir="lrc"):
-    url = f"https://lrclib.net/api/get?artist_name={'+'.join(artist_name.split())}&track_name={'+'.join(track_name.split())}"
-
-    try:
-        response = requests.get(url)
+        response = requests.get(api_url)
 
         if response.status_code == 200:
             data = response.json()
 
             if data and data.get('syncedLyrics'):
+                artist_name = data.get('artistName', 'Unknown Artist')
+                track_name = data.get('trackName', 'Unknown Track')
                 lrc_content = data['syncedLyrics']
 
                 # Create directory if it does not exist
@@ -60,12 +33,38 @@ def download_lrc(track_name, artist_name, save_dir="lrc"):
 
                 return True  # Successfully downloaded
             else:
-                return False  # No .lrc found
+                return False  # No synced lyrics found
         else:
             return False  # Error in response
     except requests.exceptions.RequestException as e:
         return False  # Request failed
 
+# Function to get track info from a Spotify URL
+def get_track_info(spotify_url):
+    try:
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            client_id="db5724867b86424da3ce45cf740632c3",
+            client_secret="c1716c31e5674c208a1c6454e84de2ca",
+            redirect_uri="http://localhost:8888/callback",
+            scope="user-read-playback-state"
+        ))
+
+        track_id = spotify_url.split('/')[-1].split('?')[0]
+        track = sp.track(track_id)
+
+        track_name = track['name']
+        artists = ', '.join([artist['name'] for artist in track['artists']])
+
+        return track_name, artists
+
+    except Exception as e:
+        tqdm.write(Fore.RED + f"[!] Error fetching track info: {str(e)}")
+        return None, None
+
+# Function to search and download .lrc file via the lrclib.net API
+def download_lrc(track_name, artist_name, save_dir="lrc"):
+    url = f"https://lrclib.net/api/get?artist_name={'+'.join(artist_name.split())}&track_name={'+'.join(track_name.split())}"
+    return download_from_api_url(url, save_dir)
 
 # Function to handle track or playlist URLs
 def handle_spotify_url(spotify_url, save_dir):
@@ -78,7 +77,6 @@ def handle_spotify_url(spotify_url, save_dir):
 
     track_urls = []
 
-    # Check if it's a track or playlist
     if "track" in spotify_url:
         track_urls.append(spotify_url)
     elif "playlist" in spotify_url:
@@ -89,8 +87,7 @@ def handle_spotify_url(spotify_url, save_dir):
     downloaded_tracks = 0
     failed_tracks = []
 
-    # Progress bar with tqdm
-    for track_url in tqdm(track_urls, desc="Downloading .lrc files", ncols=100, unit="track", leave=False, colour='cyan'):
+    for track_url in tqdm(track_urls, desc="Downloading .lrc files", ncols=100, unit="track", leave=False):
         track_name, artist_name = get_track_info(track_url)
         if track_name and artist_name:
             if download_lrc(track_name, artist_name, save_dir):
@@ -100,40 +97,47 @@ def handle_spotify_url(spotify_url, save_dir):
         else:
             failed_tracks.append(f"Invalid track info for {track_url}")
 
-    # Summary after downloading
     tqdm.write(Fore.GREEN + f"\n[✔] Downloaded {downloaded_tracks} tracks.")
     if failed_tracks:
         tqdm.write(Fore.RED + f"[!] Failed to download {len(failed_tracks)} tracks:")
         for failed_track in failed_tracks:
             tqdm.write(Fore.RED + f" - {failed_track}")
 
+# Function to handle direct lrclib API URLs
+def handle_api_url(api_url, save_dir):
+    downloaded = download_from_api_url(api_url, save_dir)
+    if downloaded:
+        tqdm.write(Fore.GREEN + "[✔] Successfully downloaded synced lyrics.")
+    else:
+        tqdm.write(Fore.RED + "[!] Failed to download synced lyrics.")
 
 def main():
     while True:
         parser = argparse.ArgumentParser(description="Download .lrc files for Spotify tracks or playlists.")
-        parser.add_argument("--url", type=str, help="Spotify track or playlist URL.")
-        parser.add_argument("--save-dir", type=str, default="lrc",
-                            help="Directory to save the .lrc file (default: 'lrc').")
+        parser.add_argument("--url", type=str, help="Spotify track or playlist URL, or direct lrclib.net API URL.")
+        parser.add_argument("--save-dir", type=str, default="lrc", help="Directory to save the .lrc file (default: 'lrc').")
 
         args = parser.parse_args()
 
-        spotify_url = args.url if args.url else input(Fore.CYAN + "Enter Spotify track or playlist URL: ")
-        if not spotify_url:
+        url = args.url if args.url else input(Fore.CYAN + "Enter Spotify track/playlist URL or lrclib API URL: ")
+        if not url:
             print(Fore.RED + "[!] No URL provided. Exiting.")
             break
 
-        save_dir = args.save_dir if args.save_dir else input(
-            Fore.CYAN + "Enter directory to save .lrc file (default 'lrc/'): ") or "lrc"
+        save_dir = args.save_dir if args.save_dir else input(Fore.CYAN + "Enter directory to save .lrc file (default 'lrc/'): ") or "lrc"
 
-        # Handle track or playlist URL
-        handle_spotify_url(spotify_url, save_dir)
+        if "spotify" in url:
+            handle_spotify_url(url, save_dir)
+        elif "lrclib.net/api/get" in url:
+            handle_api_url(url, save_dir)
+        else:
+            print(Fore.RED + "[!] Invalid URL format. Please provide a valid Spotify or lrclib.net API URL.")
 
         print(Fore.CYAN + "\n[i] Press Enter to exit or input another URL.")
         next_input = input(Fore.CYAN + "Enter Spotify track or playlist URL: ")
         if not next_input:
             print(Fore.CYAN + "[i] Exiting program.")
             break
-
 
 if __name__ == "__main__":
     main()
