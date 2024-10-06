@@ -55,6 +55,6 @@ def display_lyrics(lrc_file):
 
 if __name__ == "__main__":
 
-    lrc_file = os.path.join("lrc", "1. Shepherd of Fire.lrc")
+    lrc_file = os.path.join("lrc", "Shepherd of Fire - Avenged Sevenfold.lrc")
     display_lyrics(lrc_file)
 
